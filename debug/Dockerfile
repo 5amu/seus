@@ -1,4 +1,4 @@
-FROM alpine
+FROM scratch
 
 # Copy everithing in the root directory 
 COPY . /

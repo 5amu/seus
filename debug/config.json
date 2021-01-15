@@ -12,7 +12,7 @@
         "name"   : "seus-debug"
     },
     "ssl" : {
-        "cert" : "/localhost.crt",
-        "key" : "/localhost.key"
+        "cert" : "./localhost.crt",
+        "key" : "./localhost.key"
     }
 }

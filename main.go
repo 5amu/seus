@@ -88,7 +88,7 @@ func main() {
 	}
 
 	// Redirect from port 80 to port 443
-	go http.ListenAndServe(":8080", http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+	go http.ListenAndServe(":"+configs.Host.HTTPPort, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		Redirect(rw, r, configs)
 	}))
 
@@ -110,6 +110,6 @@ func main() {
 		fmt.Fprintf(rw, "Hit api/search")
 	})
 
-	fmt.Println("Server started at port 8081")
-	log.Fatal(http.ListenAndServeTLS(":8081", configs.SSL.Cert, configs.SSL.Key, nil))
+	fmt.Println("Server started at port 8080 and 8443")
+	log.Fatal(http.ListenAndServeTLS(":"+configs.Host.HTTPSport, configs.SSL.Cert, configs.SSL.Key, nil))
 }
