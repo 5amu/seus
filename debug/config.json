@@ -1,0 +1,18 @@
+{
+    "host"      : {
+        "domain"    : "localhost",
+        "httpport"  : "8080",
+        "httpsport" : "8443"
+    },
+    "db" : {
+        "domain" : "localhost",
+        "port"   : "9001",
+        "user"   : "test",
+        "passwd" : "test",
+        "name"   : "seus-debug"
+    },
+    "ssl" : {
+        "cert" : "/localhost.crt",
+        "key" : "/localhost.key"
+    }
+}
