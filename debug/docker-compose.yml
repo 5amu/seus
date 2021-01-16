@@ -1,8 +1,27 @@
 version: '3'
 services:
   seus:
+    container_name: "seus-app-debug"
     build: .
     ports:
       - 8080:8080
       - 8443:8443
+    networks:
+      seus-network:
     restart: always
+  db:
+    container_name: "seus-db-debug"
+    image: mongo
+    environment:
+      - MONGO_INITDB_DATABASE=seus-debug
+      - MONGO_INITDB_ROOT_USERNAME=test
+      - MONGO_INITDB_ROOT_PASSWORD=test
+    volumes:
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo-js:ro
+      - ./mongo-debug-data:/data/db
+    networks:
+      seus-network:
+    restart: always
+
+networks:
+  seus-network:

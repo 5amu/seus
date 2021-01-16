@@ -5,11 +5,12 @@
         "httpsport" : "8443"
     },
     "db" : {
-        "domain" : "localhost",
-        "port"   : "9001",
-        "user"   : "test",
-        "passwd" : "test",
-        "name"   : "seus-debug"
+        "domain"     : "seus-db-debug",
+        "port"       : "27017",
+        "user"       : "test",
+        "passwd"     : "test",
+        "name"       : "seus-debug",
+        "collection" : "seus-debug"
     },
     "ssl" : {
         "cert" : "./localhost.crt",
