@@ -22,6 +22,7 @@ import (
 const (
 	ConfigFile = "./config.json"
 	LogFile    = "./seus.log"
+	CodeLength = 6
 )
 
 // ConfigHost is a wrapper for configs about the host
@@ -81,7 +82,9 @@ func Redirect(w http.ResponseWriter, req *http.Request, c Config) {
 }
 
 func connectDB(c Config) (*mongo.Client, error) {
+	// Write values from the config file
 	DBUser, DBPass, DBHost, DBPort := c.DB.User, c.DB.Passwd, c.DB.Domain, c.DB.Port
+	// Connect to the database
 	DBConnectionURI := fmt.Sprintf("mongodb://%v:%v@%v:%v", DBUser, DBPass, DBHost, DBPort)
 	client, err := mongo.NewClient(options.Client().ApplyURI(DBConnectionURI))
 	if err != nil {
@@ -92,21 +95,26 @@ func connectDB(c Config) (*mongo.Client, error) {
 
 func getResult(c Config, filter primitive.D) (Seus, error) {
 	var res Seus
+	// Connect to client
 	client, err := connectDB(c)
 	if err != nil {
 		return res, err
 	}
+	// Generate a context
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer cancel()
+	// Connect to the database with the context
 	err = client.Connect(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer client.Disconnect(ctx)
+	// Get collection
 	collection := client.Database(c.DB.Name).Collection(c.DB.Collection)
+	// Retrieve result with filter from the collection
 	err = collection.FindOne(context.Background(), filter).Decode(&res)
 	if err != nil {
 		return res, err
@@ -114,40 +122,50 @@ func getResult(c Config, filter primitive.D) (Seus, error) {
 	return res, nil
 }
 
-func generateCode(n int) string {
-	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+func insertData(data Seus, c Config) error {
+	// Connect to client
+	client, err := connectDB(c)
+	if err != nil {
+		return err
+	}
+	// Generate a context
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cancel()
+	// Connect to the database with the context
+	err = client.Connect(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Disconnect(ctx)
+	// Get collection
+	collection := client.Database(c.DB.Name).Collection(c.DB.Collection)
+	// Insert new value into the collection
+	_, err = collection.InsertOne(ctx, data)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return nil
+}
 
+func generateCode(n int, c Config) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+	// Generate the first code
 	s := make([]rune, n)
 	for i := range s {
 		s[i] = letters[rand.Intn(len(letters))]
 	}
-	return string(s)
-}
-
-// URLRedirectWithCode gets a code and redirects to the shortened URL
-func URLRedirectWithCode(w http.ResponseWriter, r *http.Request, c Config) error {
-	// Get the code
-	code := r.URL.Path[1:]
-	// Define filters
-	filter := bson.D{bson.E{Key: "code", Value: code}}
-	// Get result by filter
-	res, err := getResult(c, filter)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			out := new(SeusResponse)
-			out.Status = 404
-			out.Code = code
-			out.Message = "Code not found"
-			mar, _ := json.Marshal(out)
-			log.Printf(string(mar))
-			fmt.Fprintf(w, string(mar))
+	// Generate a code since we don't find a matching one in the db
+	_, err := getResult(c, bson.D{bson.E{Key: "code", Value: s}})
+	for err != mongo.ErrNoDocuments {
+		for i := range s {
+			s[i] = letters[rand.Intn(len(letters))]
 		}
-		return err
 	}
-	log.Printf("Redirecting IP %v with code %v to URL %v", r.RemoteAddr, code, res.URL)
-	// Redirect to correct URL
-	http.Redirect(w, r, res.URL, http.StatusTemporaryRedirect)
-	return nil
+	// Return the code
+	return string(s)
 }
 
 func main() {
@@ -161,45 +179,96 @@ func main() {
 	defer f.Close()
 	// Set log target to the file just opened
 	log.SetOutput(f)
-
 	// Open config file
 	reader, err := ioutil.ReadFile(ConfigFile)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
-
 	// Parse config file
 	if err := json.Unmarshal([]byte(reader), &configs); err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
-
 	// Redirect from port 80 to port 443
 	go http.ListenAndServe(":"+configs.Host.HTTPPort, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		Redirect(rw, r, configs)
 	}))
-
 	// Handle base path (even with code)
 	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-		reCode := regexp.MustCompile("^[a-zA-Z_0-9]{7,}")
+		reCode := regexp.MustCompile("^[a-zA-Z_0-9]{" + fmt.Sprintf("%d", CodeLength+1) + ",}")
 		rePath := regexp.MustCompile("/")
 		if reCode.Match([]byte(r.URL.Path[1:])) || rePath.Match([]byte(r.URL.Path[1:])) {
 			http.NotFound(rw, r)
 			return
 		}
-		if err := URLRedirectWithCode(rw, r, configs); err != nil {
-			log.Println(err)
+		// Get the code
+		code := r.URL.Path[1:]
+		// Define filters
+		filter := bson.D{bson.E{Key: "code", Value: code}}
+		// Get result by filter
+		res, err := getResult(configs, filter)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				out := *new(SeusResponse)
+				out.Status = 404
+				out.Code = code
+				out.Message = "Code not found"
+				mar, _ := json.Marshal(res)
+				log.Printf(string(mar))
+				fmt.Fprintf(rw, string(mar))
+			}
+			return
 		}
+		log.Printf("Redirecting IP %v with code %v to URL %v", r.RemoteAddr, code, res.URL)
+		// Redirect to correct URL
+		http.Redirect(rw, r, res.URL, http.StatusTemporaryRedirect)
 	})
 
 	// Api handling
-	http.HandleFunc("/api", func(rw http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(rw, "Hit api")
-	})
-
 	http.HandleFunc("/api/create", func(rw http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(rw, "Hit api/create")
+		out := *new(SeusResponse)
+		query := r.URL.Query()
+		qurl, present := query["url"]
+		if !present || len(qurl) != 1 {
+			out.Status = 400
+			out.Message = "No URL Specified (or too many)"
+			mar, _ := json.Marshal(out)
+			log.Printf(string(mar))
+			fmt.Fprintf(rw, string(mar))
+			return
+		}
+		url := qurl[0]
+		filter := bson.D{bson.E{Key: "url", Value: url}}
+
+		res, err := getResult(configs, filter)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				data := *new(Seus)
+				data.Code = generateCode(CodeLength, configs)
+				data.URL = url
+				insertData(data, configs)
+
+				out.Status = 200
+				out.Code = data.Code
+				out.URL = data.URL
+				out.Message = "Code inserted correctly"
+				out.Encoded = configs.Host.Domain + "/" + data.Code
+				mar, _ := json.Marshal(out)
+				log.Printf(string(mar))
+				fmt.Fprintf(rw, string(mar))
+				return
+			}
+		}
+
+		out.Status = 400
+		out.Code = res.Code
+		out.URL = res.URL
+		out.Message = "Code already exists"
+		out.Encoded = configs.Host.Domain + "/" + res.Code
+		mar, _ := json.Marshal(out)
+		log.Printf(string(mar))
+		fmt.Fprintf(rw, string(mar))
 	})
 
 	http.HandleFunc("/api/search", func(rw http.ResponseWriter, r *http.Request) {
