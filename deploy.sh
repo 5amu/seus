@@ -10,6 +10,7 @@ deploy() {
     _scriptdir="$PWD"
     env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o "$1"
     cd "$1"
+    sudo docker-compose down
     sudo docker-compose up --build -d
     cd "$_scriptdir"
 }

@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
+	"regexp"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -93,13 +96,32 @@ func getResult(c Config, filter primitive.D) (Seus, error) {
 	if err != nil {
 		return res, err
 	}
-	defer client.Disconnect(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cancel()
+	err = client.Connect(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Disconnect(ctx)
 	collection := client.Database(c.DB.Name).Collection(c.DB.Collection)
 	err = collection.FindOne(context.Background(), filter).Decode(&res)
 	if err != nil {
 		return res, err
 	}
 	return res, nil
+}
+
+func generateCode(n int) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+	s := make([]rune, n)
+	for i := range s {
+		s[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(s)
 }
 
 // URLRedirectWithCode gets a code and redirects to the shortened URL
@@ -117,6 +139,7 @@ func URLRedirectWithCode(w http.ResponseWriter, r *http.Request, c Config) error
 			out.Code = code
 			out.Message = "Code not found"
 			mar, _ := json.Marshal(out)
+			log.Printf(string(mar))
 			fmt.Fprintf(w, string(mar))
 		}
 		return err
@@ -159,6 +182,12 @@ func main() {
 
 	// Handle base path (even with code)
 	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+		reCode := regexp.MustCompile("^[a-zA-Z_0-9]{7,}")
+		rePath := regexp.MustCompile("/")
+		if reCode.Match([]byte(r.URL.Path[1:])) || rePath.Match([]byte(r.URL.Path[1:])) {
+			http.NotFound(rw, r)
+			return
+		}
 		if err := URLRedirectWithCode(rw, r, configs); err != nil {
 			log.Println(err)
 		}
