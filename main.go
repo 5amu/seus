@@ -214,7 +214,7 @@ func main() {
 				out.Status = 404
 				out.Code = code
 				out.Message = "Code not found"
-				mar, _ := json.Marshal(res)
+				mar, _ := json.Marshal(out)
 				log.Printf(string(mar))
 				fmt.Fprintf(rw, string(mar))
 			}
@@ -222,7 +222,7 @@ func main() {
 		}
 		log.Printf("Redirecting IP %v with code %v to URL %v", r.RemoteAddr, code, res.URL)
 		// Redirect to correct URL
-		http.Redirect(rw, r, res.URL, http.StatusTemporaryRedirect)
+		http.Redirect(rw, r, string(res.URL), http.StatusFound)
 	})
 
 	// Api handling
@@ -239,6 +239,15 @@ func main() {
 			return
 		}
 		url := qurl[0]
+		re := regexp.MustCompile("^http(s){0,1}://[a-zA-Z0-9_.-]+$")
+		if !re.Match([]byte(url)) {
+			out.Status = 400
+			out.Message = "Unexpected characters in URL, allowed are: [a-zA-Z0-9_.-]"
+			mar, _ := json.Marshal(out)
+			log.Printf(string(mar))
+			fmt.Fprintf(rw, string(mar))
+			return
+		}
 		filter := bson.D{bson.E{Key: "url", Value: url}}
 
 		res, err := getResult(configs, filter)
